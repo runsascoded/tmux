@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# List tmux sessions with formatting
+# Usage: tmux-list [pattern]
+
+sessions=$(tmux ls -F '#{session_name}|#{session_windows}w|#{?session_attached,attached,detached}|#{session_created}' 2>/dev/null)
+
+if [ -z "$sessions" ]; then
+    echo "No tmux sessions" >&2
+    exit 0
+fi
+
+# Optional filter
+pattern="${1:-}"
+
+while IFS='|' read -r name windows status created; do
+    age=$(date -d "@$created" '+%H:%M' 2>/dev/null || /usr/bin/date -r "$created" '+%H:%M' 2>/dev/null || echo "?")
+    if [ -n "$pattern" ] && [[ "$name" != *"$pattern"* ]]; then
+        continue
+    fi
+    if [ "$status" = "attached" ]; then
+        printf "  \033[1;32m%-20s\033[0m %s  %s  (%s)\n" "$name" "$windows" "$status" "$age"
+    else
+        printf "  \033[0;37m%-20s\033[0m %s  %s  (%s)\n" "$name" "$windows" "$status" "$age"
+    fi
+done <<< "$sessions"

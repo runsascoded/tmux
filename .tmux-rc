@@ -1,0 +1,31 @@
+# tmux aliases and helpers
+# Auto-sourced by ~/.rc/.rc via load_helpers
+
+alias tm='tmux'
+alias tma='tmux attach -t'      # tma <session>
+alias tml='tmux-list'            # tml [pattern]
+alias tmn='tmux new -s'          # tmn <name>
+alias tmk='tmux kill-session -t' # tmk <session>
+alias tms='tmux switch -t'      # tms <session> (from within tmux)
+alias tmr='tmux rename-session'  # tmr <new-name>
+
+# Attach or create: tmc <name> attaches if exists, creates if not
+tmc() {
+    tmux attach -t "$1" 2>/dev/null || tmux new -s "$1"
+}
+
+# Kill all detached sessions
+tmka() {
+    tmux ls 2>/dev/null | grep -v attached | cut -d: -f1 | while read -r s; do
+        tmux kill-session -t "$s"
+        echo "killed: $s"
+    done
+}
+
+# Completions for tm* commands (session names)
+_tmux_sessions() {
+    local sessions
+    sessions=$(tmux ls -F '#{session_name}' 2>/dev/null)
+    COMPREPLY=($(compgen -W "$sessions" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+complete -F _tmux_sessions tma tmk tms tmc
