@@ -1,18 +1,35 @@
 # tmux aliases and helpers
-# Auto-sourced by ~/.rc/.rc via load_helpers
+# Auto-sourced by ~/.rc/.rc
+
+# iTerm2 profile switching (tmux profile passes Page Up/Down through)
+_iterm_profile() {
+    printf '\e]1337;SetProfile=%s\a' "$1"
+}
+
+# Wrap tmux commands to auto-switch iTerm2 profile
+tma() {
+    _iterm_profile tmux
+    tmux attach -t "$@"
+    _iterm_profile Default
+}
+
+tmn() {
+    _iterm_profile tmux
+    tmux new -s "$@"
+    _iterm_profile Default
+}
+
+tmc() {
+    _iterm_profile tmux
+    tmux attach -t "$1" 2>/dev/null || tmux new -s "$1"
+    _iterm_profile Default
+}
 
 alias tm='tmux'
-alias tma='tmux attach -t'      # tma <session>
 alias tml='tmux-list'            # tml [pattern]
-alias tmn='tmux new -s'          # tmn <name>
 alias tmk='tmux kill-session -t' # tmk <session>
 alias tms='tmux switch -t'      # tms <session> (from within tmux)
 alias tmr='tmux rename-session'  # tmr <new-name>
-
-# Attach or create: tmc <name> attaches if exists, creates if not
-tmc() {
-    tmux attach -t "$1" 2>/dev/null || tmux new -s "$1"
-}
 
 # Kill all detached sessions
 tmka() {
