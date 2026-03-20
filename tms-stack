@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Create a project stack (tmux window with 2-3 panes) in the current session.
+# Run from inside tmux.
+#
+# Usage:
+#   tms-stack <path> [name]         # 2-pane stack (claude + shell)
+#   tms-stack -d <path> [name]      # 3-pane stack (claude + shell + dev server)
+#   tms-stack -D CMD <path> [name]  # 3-pane stack with custom dev command
+#
+# If name is omitted, uses the directory basename.
+
+set -euo pipefail
+
+dev=false
+dev_cmd="npm run dev"
+claude_args=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d) dev=true; shift ;;
+        -D) dev=true; dev_cmd="$2"; shift 2 ;;
+        -c) claude_args="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: tms-stack [-d] [-D CMD] [-c CLAUDE_ARGS] <path> [name]"
+            exit 0
+            ;;
+        *) break ;;
+    esac
+done
+
+path="${1:?Usage: tms-stack <path> [name]}"
+path="$(cd "$path" 2>/dev/null && pwd || echo "$path")"
+name="${2:-$(basename "$path")}"
+
+if [ -z "$TMUX" ]; then
+    echo "Error: must be run inside tmux" >&2
+    exit 1
+fi
+
+claude_cmd="claude"
+if [ -n "$claude_args" ]; then
+    claude_cmd="claude $claude_args"
+fi
+
+if $dev; then
+    # 3-pane stack: claude (top 50%) | shell (25%) | dev (25%)
+    tmux new-window -n "$name" -c "$path" \; \
+        split-window -v -c "$path" -l 50% \; \
+        split-window -v -c "$path" -l 50% \; \
+        send-keys -t "{top}" "$claude_cmd" Enter \; \
+        send-keys -t "{bottom}" "$dev_cmd" Enter \; \
+        select-pane -t "{top}"
+else
+    # 2-pane stack: claude (top 70%) | shell (bottom 30%)
+    tmux new-window -n "$name" -c "$path" \; \
+        split-window -v -c "$path" -l 30% \; \
+        send-keys -t "{top}" "$claude_cmd" Enter \; \
+        select-pane -t "{top}"
+fi

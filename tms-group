@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Open a second independent view of a tmux session (session group).
+# Run from outside tmux (in a bare iTerm pane).
+#
+# Usage:
+#   tms-group [session]    # default: "main"
+#
+# Creates a grouped session that shares all windows with the target session
+# but has an independent "current window" selection. Each iTerm pane can
+# view a different window from the same session.
+
+set -euo pipefail
+
+session="${1:-main}"
+
+# Check session exists
+if ! tmux has-session -t "$session" 2>/dev/null; then
+    echo "Session '$session' doesn't exist. Create it first with: tmc $session" >&2
+    exit 1
+fi
+
+# Generate a unique group view name
+n=2
+while tmux has-session -t "${session}-${n}" 2>/dev/null; do
+    ((n++))
+done
+view="${session}-${n}"
+
+# Switch to tmux profile for iTerm key handling
+printf '\e]1337;SetProfile=%s\a' "tmux"
+
+tmux new-session -d -s "$view" -t "$session"
+tmux attach -t "$view"
+
+# Restore default profile on detach
+printf '\e]1337;SetProfile=%s\a' "Default"

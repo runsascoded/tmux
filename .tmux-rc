@@ -45,4 +45,7 @@ _tmux_sessions() {
     sessions=$(tmux ls -F '#{session_name}' 2>/dev/null)
     COMPREPLY=($(compgen -W "$sessions" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
-complete -F _tmux_sessions tma tmk tms tmc tml tmux-list
+complete -F _tmux_sessions tma tmk tms tmc tml tmux-list tms-group
+
+# tms-stack completes directories
+complete -d tms-stack
