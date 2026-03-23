@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Create a new project directory, git init, and open as a tmux stack.
+# Run from inside tmux.
+#
+# Usage:
+#   tms-new <path> [name]
+#   tms-new ~/c/my-new-project
+#   tms-new ~/c/my-new-project cool-name
+#
+# Creates the directory (including parents), runs git init,
+# and opens a 2-pane stack with claude -c in top pane.
+
+set -euo pipefail
+
+path="${1:?Usage: tms-new <path> [name]}"
+name="${2:-$(basename "$path")}"
+
+if [ -z "${TMUX:-}" ]; then
+    echo "Error: must be run inside tmux" >&2
+    exit 1
+fi
+
+if [ -d "$path" ]; then
+    echo "Directory already exists: $path" >&2
+    echo "Use tms-stack instead" >&2
+    exit 1
+fi
+
+mkdir -p "$path"
+git -C "$path" init
+path="$(cd "$path" && pwd)"
+
+# 2-pane stack: claude (top 70%) | shell (bottom 30%)
+tmux new-window -n "$name" -c "$path" \; \
+    split-window -v -c "$path" -l 30% \; \
+    send-keys -t "{top}" "claude" Enter \; \
+    select-pane -t "{top}"
