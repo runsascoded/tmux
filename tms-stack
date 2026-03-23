@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Create a project stack (tmux window with 2-3 panes) in the current session.
-# Run from inside tmux.
+# Create a project stack (tmux window with 2-3 panes).
+# Works from inside or outside tmux.
 #
 # Usage:
 #   tms-stack <path> [name]         # 2-pane stack (claude + shell)
@@ -8,15 +8,18 @@
 #   tms-stack -D CMD <path> [name]  # 3-pane stack with custom dev command
 #
 # If name is omitted, uses the directory basename.
+# If run outside tmux, creates stack in most recent session (or "main").
 
 set -euo pipefail
 
 dev=false
+no_dev=false
 dev_cmd="npm run dev"
 claude_args=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -2) no_dev=true; shift ;;
         -d) dev=true; shift ;;
         -D) dev=true; dev_cmd="$2"; shift 2 ;;
         -c) claude_args="$2"; shift 2 ;;
@@ -32,19 +35,51 @@ path="${1:?Usage: tms-stack <path> [name]}"
 path="$(cd "$path" 2>/dev/null && pwd || echo "$path")"
 name="${2:-$(basename "$path")}"
 
-if [ -z "$TMUX" ]; then
-    echo "Error: must be run inside tmux" >&2
-    exit 1
+attach_after=false
+if [ -z "${TMUX:-}" ]; then
+    # Outside tmux: target the most recent session (or create "main")
+    session=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
+    if [ -z "$session" ]; then
+        session="main"
+        tmux new-session -d -s "$session"
+    fi
+    attach_after=true
+else
+    session=$(tmux display-message -p '#{session_name}')
 fi
 
-claude_cmd="claude"
-if [ -n "$claude_args" ]; then
-    claude_cmd="claude $claude_args"
+# Auto-detect project type if not explicitly set
+web_subdir=""
+if [ -z "$claude_args" ]; then
+    claude_args="-c"
+    # Check for web project → add --chrome, auto-enable dev mode
+    if [ -f "$path/package.json" ]; then
+        claude_args="-c --chrome"
+        if ! $dev && ! $no_dev; then
+            dev=true
+            dev_cmd="npm run dev"
+        fi
+    elif [ -f "$path/www/package.json" ]; then
+        claude_args="-c --chrome"
+        web_subdir="www"
+        if ! $dev && ! $no_dev; then
+            dev=true
+            dev_cmd="cd www && npm run dev"
+        fi
+    elif [ -f "$path/site/package.json" ]; then
+        claude_args="-c --chrome"
+        web_subdir="site"
+        if ! $dev && ! $no_dev; then
+            dev=true
+            dev_cmd="cd site && npm run dev"
+        fi
+    fi
 fi
+claude_cmd="claude $claude_args"
 
 if $dev; then
     # 3-pane stack: claude (top 50%) | shell (25%) | dev (25%)
-    tmux new-window -n "$name" -c "$path" \; \
+    tmux new-window -t "$session" -n "$name" -c "$path" \; \
         split-window -v -c "$path" -l 50% \; \
         split-window -v -c "$path" -l 50% \; \
         send-keys -t "{top}" "$claude_cmd" Enter \; \
@@ -52,8 +87,12 @@ if $dev; then
         select-pane -t "{top}"
 else
     # 2-pane stack: claude (top 70%) | shell (bottom 30%)
-    tmux new-window -n "$name" -c "$path" \; \
+    tmux new-window -t "$session" -n "$name" -c "$path" \; \
         split-window -v -c "$path" -l 30% \; \
         send-keys -t "{top}" "$claude_cmd" Enter \; \
         select-pane -t "{top}"
+fi
+
+if $attach_after; then
+    exec tmux attach -t "$session"
 fi
