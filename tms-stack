@@ -77,6 +77,17 @@ if [ -z "$claude_args" ]; then
 fi
 claude_cmd="claude $claude_args"
 
+# Check if a window already exists for this path
+existing=$(tmux list-windows -t "$session" -F '#{window_index} #{pane_current_path}' 2>/dev/null \
+    | grep -F "$path" | head -1 | awk '{print $1}' || true)
+if [ -n "$existing" ]; then
+    tmux select-window -t "$session:$existing"
+    if $attach_after; then
+        exec tmux attach -t "$session"
+    fi
+    exit 0
+fi
+
 if $dev; then
     # 3-pane stack: claude (top 50%) | shell (25%) | dev (25%)
     tmux new-window -t "$session" -n "$name" -c "$path" \; \
