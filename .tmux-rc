@@ -3,26 +3,26 @@
 
 # iTerm2 profile switching (tmux profile passes Page Up/Down through)
 _iterm_profile() {
-    printf '\e]1337;SetProfile=%s\a' "$1"
+    printf '\e]1337;SetProfile=%s\a' "${1:-rc}"
 }
 
 # Wrap tmux commands to auto-switch iTerm2 profile
 tma() {
-    _iterm_profile tmux
+    _iterm_profile rc
     tmux attach -t "$@"
-    _iterm_profile Default
+    _iterm_profile rc
 }
 
 tmn() {
-    _iterm_profile tmux
+    _iterm_profile rc
     tmux new -s "$@"
-    _iterm_profile Default
+    _iterm_profile rc
 }
 
 tmc() {
-    _iterm_profile tmux
+    _iterm_profile rc
     tmux attach -t "$1" 2>/dev/null || tmux new -s "$1"
-    _iterm_profile Default
+    _iterm_profile rc
 }
 
 alias tm='tmux'
