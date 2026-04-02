@@ -27,9 +27,32 @@ tmc() {
 
 alias tm='tmux'
 alias tml='tmux-list'            # tml [pattern]
-alias tmk='tmux kill-session -t' # tmk <session>
+alias tmlw='tmux-list-windows'   # tmlw [pattern ...]
+# tmk <session ...> - kill one or more sessions
+tmk() {
+    for s in "$@"; do tmux kill-session -t "$s" && echo "killed session: $s"; done
+}
+# tmkw <session:window ...> - kill one or more windows
+tmkw() {
+    for w in "$@"; do tmux kill-window -t "$w" && echo "killed window: $w"; done
+}
 alias tms='tmux switch -t'      # tms <session> (from within tmux)
 alias tmr='tmux rename-session'  # tmr <new-name>
+
+# Pop current window out to its own session (named after the window)
+tmpo() {
+    local win_name
+    win_name=$(tmux display-message -p '#{window_name}')
+    local session_name="${1:-$win_name}"
+    tmux move-window -t "$session_name:" 2>/dev/null || {
+        tmux new-session -d -s "$session_name"
+        # new-session creates a default window; move ours then kill the extra
+        tmux move-window -t "$session_name:"
+        tmux kill-window -t "$session_name:0" 2>/dev/null
+    }
+    tmux switch-client -t "$session_name"
+    echo "popped to session: $session_name" >&2
+}
 
 # Kill all detached sessions
 tmka() {
@@ -46,6 +69,14 @@ _tmux_sessions() {
     COMPREPLY=($(compgen -W "$sessions" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _tmux_sessions tma tmk tms tmc tml tmux-list tms-group
+
+# Completions for tmkw (session:window targets)
+_tmux_windows() {
+    local windows
+    windows=$(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null)
+    COMPREPLY=($(compgen -W "$windows" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+complete -F _tmux_windows tmkw
 
 # tms-stack completes directories
 complete -d tms-stack
