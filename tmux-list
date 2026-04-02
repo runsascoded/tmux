@@ -1,6 +1,33 @@
 #!/usr/bin/env bash
 # List tmux sessions with formatting
-# Usage: tmux-list [pattern]
+# Usage: tmux-list [-w] [-t] [-s] [pattern ...]
+#   -w  Show window names (comma-delimited)
+#   -t  Show creation time
+#   -s  Show attached/detached status
+#   Default (no flags): show all columns
+
+show_windows=""
+show_time=""
+show_status=""
+any_flag=""
+patterns=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -w) show_windows=1; any_flag=1; shift ;;
+        -t) show_time=1; any_flag=1; shift ;;
+        -s) show_status=1; any_flag=1; shift ;;
+        -*) echo "Usage: tmux-list [-w] [-t] [-s] [pattern ...]" >&2; exit 1 ;;
+        *)  patterns+=("$1"); shift ;;
+    esac
+done
+
+# No flags = show all
+if [ -z "$any_flag" ]; then
+    show_windows=1
+    show_time=1
+    show_status=1
+fi
 
 sessions=$(tmux ls -F '#{session_name}|#{session_windows}w|#{?session_attached,attached,detached}|#{session_created}' 2>/dev/null)
 
@@ -9,17 +36,35 @@ if [ -z "$sessions" ]; then
     exit 0
 fi
 
-# Optional filter
-pattern="${1:-}"
-
 while IFS='|' read -r name windows status created; do
-    age=$(date -d "@$created" '+%H:%M' 2>/dev/null || /usr/bin/date -r "$created" '+%H:%M' 2>/dev/null || echo "?")
-    if [ -n "$pattern" ] && [[ "$name" != *"$pattern"* ]]; then
-        continue
+    # Filter by patterns (OR match)
+    if [ ${#patterns[@]} -gt 0 ]; then
+        match=0
+        for p in "${patterns[@]}"; do
+            [[ "$name" == *"$p"* ]] && { match=1; break; }
+        done
+        [ "$match" -eq 0 ] && continue
     fi
+
+    line="$windows"
+
+    if [ -n "$show_status" ]; then
+        line="$line  $status"
+    fi
+
+    if [ -n "$show_time" ]; then
+        age=$(date -d "@$created" '+%H:%M' 2>/dev/null || /usr/bin/date -r "$created" '+%H:%M' 2>/dev/null || echo "?")
+        line="$line  ($age)"
+    fi
+
+    if [ -n "$show_windows" ]; then
+        win_names=$(tmux list-windows -t "$name" -F '#{window_name}' 2>/dev/null | paste -sd, -)
+        line="$line  $win_names"
+    fi
+
     if [ "$status" = "attached" ]; then
-        printf "  \033[1;32m%-20s\033[0m %s  %s  (%s)\n" "$name" "$windows" "$status" "$age"
+        printf "  \033[1;32m%-20s\033[0m %s\n" "$name" "$line"
     else
-        printf "  \033[0;37m%-20s\033[0m %s  %s  (%s)\n" "$name" "$windows" "$status" "$age"
+        printf "  \033[0;37m%-20s\033[0m %s\n" "$name" "$line"
     fi
 done <<< "$sessions"
