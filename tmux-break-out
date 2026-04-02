@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Break current tmux window out to its own session
+# Usage: tmux-break-out [session-name]
+#   Default name: current window name (with . replaced by _)
+
+name="${1:-$(tmux display-message -p '#{window_name}' | tr '.' '_')}"
+win_id=$(tmux display-message -p '#{window_id}')
+
+# Avoid collision with existing session
+if tmux has-session -t "=$name" 2>/dev/null; then
+    name="${name}-$(date +%s)"
+fi
+
+# Create new session (gets a placeholder window at index 1)
+tmux new-session -d -s "$name" || { echo "new-session failed" >&2; exit 1; }
+
+# Move current window by ID into the new session
+tmux move-window -s "$win_id" -t "=$name:" || { echo "move-window failed" >&2; exit 1; }
+
+# Kill the placeholder window (index 1)
+tmux kill-window -t "=$name:1" || { echo "kill-placeholder failed" >&2; exit 1; }
+
+# Switch to the new session
+tmux switch-client -t "=$name"

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# List tmux windows, optionally filtered by session name substring(s)
+# Usage: tmux-list-windows [pattern ...]
+#   No args: list all windows across all sessions
+#   With args: list windows for sessions matching any pattern (substring match)
+
+output=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{?window_active,*, }' 2>/dev/null)
+
+if [ -z "$output" ]; then
+    echo "No tmux sessions" >&2
+    exit 0
+fi
+
+while IFS='|' read -r session idx name active; do
+    if [ $# -gt 0 ]; then
+        match=0
+        for pattern in "$@"; do
+            if [[ "$session" == *"$pattern"* ]]; then
+                match=1
+                break
+            fi
+        done
+        [ "$match" -eq 0 ] && continue
+    fi
+    printf "  %-20s %s:%s %s\n" "$session" "$idx" "$name" "$active"
+done <<< "$output"
