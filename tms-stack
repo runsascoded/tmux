@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Create a project stack (tmux window with 2-3 panes).
-# Works from inside or outside tmux.
+# Create a project stack (tmux session/window with 2-3 panes).
+#
+# Default: creates a NEW session (1-window-per-session workflow).
+# Use -w to add a window to the current session instead.
 #
 # Usage:
-#   tms-stack <path> [name]         # 2-pane stack (claude + shell)
-#   tms-stack -d <path> [name]      # 3-pane stack (claude + shell + dev server)
-#   tms-stack -D CMD <path> [name]  # 3-pane stack with custom dev command
+#   tms-stack [opts] [path] [name]
+#   tms-stack -d [path] [name]       # 3-pane stack (claude + shell + dev server)
+#   tms-stack -D CMD [path] [name]   # 3-pane stack with custom dev command
+#   tms-stack -w [path] [name]       # add window to current session (not new session)
 #
-# If name is omitted, uses the directory basename.
-# If run outside tmux, creates stack in most recent session (or "main").
+# path defaults to $PWD. name defaults to the directory basename.
 
 set -euo pipefail
 
@@ -16,6 +18,7 @@ dev=false
 no_dev=false
 dev_cmd="npm run dev"
 claude_args=""
+add_to_session=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -23,36 +26,24 @@ while [[ $# -gt 0 ]]; do
         -d) dev=true; shift ;;
         -D) dev=true; dev_cmd="$2"; shift 2 ;;
         -c) claude_args="$2"; shift 2 ;;
+        -w) add_to_session=true; shift ;;
         -h|--help)
-            echo "Usage: tms-stack [-d] [-D CMD] [-c CLAUDE_ARGS] <path> [name]"
+            echo "Usage: tms-stack [-d] [-D CMD] [-c CLAUDE_ARGS] [-w] [path] [name]"
+            echo "  -w  Add window to current session (default: create new session)"
             exit 0
             ;;
         *) break ;;
     esac
 done
 
-path="${1:?Usage: tms-stack <path> [name]}"
+path="${1:-$PWD}"
 path="$(cd "$path" 2>/dev/null && pwd || echo "$path")"
 name="${2:-$(basename "$path")}"
-
-attach_after=false
-if [ -z "${TMUX:-}" ]; then
-    # Outside tmux: target the most recent session (or create "main")
-    session=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
-    if [ -z "$session" ]; then
-        session="main"
-        tmux new-session -d -s "$session"
-    fi
-    attach_after=true
-else
-    session=$(tmux display-message -p '#{session_name}')
-fi
 
 # Auto-detect project type if not explicitly set
 web_subdir=""
 if [ -z "$claude_args" ]; then
     claude_args="-c"
-    # Check for web project → add --chrome, auto-enable dev mode
     if [ -f "$path/package.json" ]; then
         claude_args="-c --chrome"
         if ! $dev && ! $no_dev; then
@@ -77,20 +68,41 @@ if [ -z "$claude_args" ]; then
 fi
 claude_cmd="claude $claude_args"
 
-# Check if a window already exists for this path
-existing=$(tmux list-windows -t "$session" -F '#{window_index} #{pane_current_path}' 2>/dev/null \
-    | grep -F "$path" | head -1 | awk '{print $1}' || true)
-if [ -n "$existing" ]; then
-    tmux select-window -t "$session:$existing"
-    if $attach_after; then
-        exec tmux attach -t "$session"
+if $add_to_session; then
+    # -w mode: add window to current session
+    if [ -z "${TMUX:-}" ]; then
+        echo "Error: -w requires being inside a tmux session" >&2
+        exit 1
     fi
-    exit 0
+    session=$(tmux display-message -p '#{session_name}')
+    attach_after=false
+else
+    # Default: create a new session
+    session="$name"
+    # Handle name collision
+    if tmux has-session -t "=$session" 2>/dev/null; then
+        # If existing session has a window at this path, just switch to it
+        existing=$(tmux list-windows -t "=$session" -F '#{window_index} #{pane_current_path}' 2>/dev/null \
+            | grep -F "$path" | head -1 | awk '{print $1}' || true)
+        if [ -n "$existing" ]; then
+            if [ -n "${TMUX:-}" ]; then
+                tmux switch-client -t "=$session"
+            else
+                exec tmux attach -t "=$session"
+            fi
+            exit 0
+        fi
+        session="${name}-$(date +%s)"
+    fi
+    tmux new-session -d -s "$session" -c "$path"
+    # Kill the placeholder window (will be replaced by our stack)
+    placeholder=$(tmux list-windows -t "=$session" -F '#{window_index}' | head -1)
+    attach_after=true
 fi
 
 if $dev; then
     # 3-pane stack: claude (top 50%) | shell (25%) | dev (25%)
-    tmux new-window -t "$session" -n "$name" -c "$path" \; \
+    tmux new-window -t "=$session" -n "$name" -c "$path" \; \
         split-window -v -c "$path" -l 50% \; \
         split-window -v -c "$path" -l 50% \; \
         send-keys -t "{top}" "$claude_cmd" Enter \; \
@@ -98,12 +110,21 @@ if $dev; then
         select-pane -t "{top}"
 else
     # 2-pane stack: claude (top 70%) | shell (bottom 30%)
-    tmux new-window -t "$session" -n "$name" -c "$path" \; \
+    tmux new-window -t "=$session" -n "$name" -c "$path" \; \
         split-window -v -c "$path" -l 30% \; \
         send-keys -t "{top}" "$claude_cmd" Enter \; \
         select-pane -t "{top}"
 fi
 
+# Kill placeholder window from new-session (if we created one)
+if ! $add_to_session && [ -n "${placeholder:-}" ]; then
+    tmux kill-window -t "=$session:$placeholder" 2>/dev/null || true
+fi
+
 if $attach_after; then
-    exec tmux attach -t "$session"
+    if [ -n "${TMUX:-}" ]; then
+        tmux switch-client -t "=$session"
+    else
+        exec tmux attach -t "=$session"
+    fi
 fi
