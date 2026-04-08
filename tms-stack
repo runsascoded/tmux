@@ -38,7 +38,7 @@ done
 
 path="${1:-$PWD}"
 path="$(cd "$path" 2>/dev/null && pwd || echo "$path")"
-name="${2:-$(basename "$path")}"
+name="${2:-$(basename "$path" | tr '.' '_')}"
 
 # Auto-detect project type if not explicitly set
 web_subdir=""
